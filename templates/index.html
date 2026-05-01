@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CrashAlert — Road Safety Intelligence</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        /* ── Variables ── */
+        :root {
+            --blur:       blur(18px);
+            --glass:      rgba(255,255,255,0.72);
+            --glass-dark: rgba(255,255,255,0.5);
+            --glass-card: rgba(255,255,255,0.85);
+            --border:     rgba(255,255,255,0.55);
+            --shadow:     0 8px 32px rgba(60,80,160,0.14);
+            --text:       #1a1c2e;
+            --text-sec:   #4a4f6e;
+            --text-muted: #8890b0;
+            --accent:     #3949ab;
+            --accent2:    #5e35b1;
+            --red:        #c62828;
+            --green:      #2e7d32;
+            --orange:     #e65100;
+            --bg-grad:    linear-gradient(135deg, #e8ecff 0%, #f0e8ff 40%, #e8f4ff 100%);
+            --divider:    rgba(60,80,160,0.12);
+        }
+        [data-theme="dark"] {
+            --glass:      rgba(18,20,40,0.75);
+            --glass-dark: rgba(18,20,40,0.6);
+            --glass-card: rgba(20,22,45,0.88);
+            --border:     rgba(120,140,255,0.18);
+            --shadow:     0 8px 32px rgba(0,0,0,0.45);
+            --text:       #e8eaf6;
+            --text-sec:   #9fa8da;
+            --text-muted: #5c6090;
+            --accent:     #7986cb;
+            --accent2:    #b39ddb;
+            --bg-grad:    linear-gradient(135deg, #0d0f1e 0%, #14103a 40%, #0a1628 100%);
+            --divider:    rgba(120,140,255,0.12);
+        }
+
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body {
+            font-family:'Segoe UI',system-ui,-apple-system,sans-serif;
+            height:100vh; overflow:hidden;
+            background: var(--bg-grad);
+        }
+        .leaflet-control-attribution { display:none!important; }
+
+        /* ── Glassmorphism base ── */
+        .glass {
+            background: var(--glass);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+        }
+        .glass-card {
+            background: var(--glass-card);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+        }
+
+        /* ── Navbar ── */
+        .navbar {
+            position:fixed; top:0; left:0; right:0; height:58px; z-index:1000;
+            background: var(--glass);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            border-bottom: 1px solid var(--border);
+            display:flex; align-items:center; padding:0 22px; gap:10px;
+        }
+        .logo { font-size:19px; font-weight:800; color:var(--text); letter-spacing:-0.5px; display:flex; align-items:center; gap:8px; }
+        .logo-dot { width:9px; height:9px; background:var(--red); border-radius:50%; flex-shrink:0; box-shadow:0 0 8px rgba(198,40,40,0.6); }
+        .navbar-spacer { flex:1; }
+        .nav-btn {
+            background: var(--glass-dark);
+            backdrop-filter: var(--blur);
+            border: 1px solid var(--border);
+            border-radius:10px; padding:6px 14px; cursor:pointer;
+            font-size:12px; font-weight:600; color:var(--text-sec);
+            transition:all 0.2s; display:flex; align-items:center; gap:5px;
+        }
+        .nav-btn:hover { border-color:var(--accent); color:var(--accent); background:rgba(57,73,171,0.1); }
+        .nav-btn svg { width:14px; height:14px; fill:currentColor; }
+        .saved-count { background:var(--accent); color:white; border-radius:10px; padding:1px 6px; font-size:10px; font-weight:700; display:none; }
+        .saved-count.visible { display:inline-block; }
+
+        /* ── Map ── */
+        #map { position:absolute; top:58px; left:0; right:0; bottom:0; z-index:1; }
+        .map-attr { position:fixed; bottom:8px; right:8px; z-index:998; background:var(--glass); backdrop-filter:var(--blur); border:1px solid var(--border); border-radius:6px; padding:3px 9px; font-size:10px; color:var(--text-muted); }
+
+        /* ── Control Panel ── */
+        .control-panel {
+            position:fixed; top:76px; left:20px;
+            background: var(--glass);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            border: 1px solid var(--border);
+            box-shadow: var(--shadow);
+            padding:18px; border-radius:18px;
+            z-index:999; width:315px;
+            max-height:calc(100vh - 96px); overflow-y:auto;
+            transition: background 0.3s;
+        }
+        .panel-title { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.9px; margin-bottom:14px; }
+
+        /* Input fields */
+        .field-group { margin-bottom:11px; position:relative; }
+        .field-label { display:block; margin-bottom:4px; color:var(--text-sec); font-size:12px; font-weight:600; }
+        .field-input {
+            width:100%; padding:10px 12px;
+            background: var(--glass-card);
+            backdrop-filter: var(--blur);
+            border: 1px solid var(--border);
+            border-radius:10px; font-size:13px;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            color: var(--text);
+        }
+        .field-input:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(57,73,171,0.12); }
+        .field-input::placeholder { color:var(--text-muted); }
+
+        /* Autocomplete */
+        .ac-dd {
+            position:absolute; top:100%; left:0; right:0;
+            background: var(--glass);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            border: 1px solid var(--border);
+            border-radius:10px; box-shadow:var(--shadow);
+            z-index:1100; display:none; max-height:175px; overflow-y:auto; margin-top:3px;
+        }
+        .ac-dd.open { display:block; }
+        .ac-item { padding:8px 11px; cursor:pointer; border-bottom:1px solid var(--divider); transition:background 0.12s; }
+        .ac-item:last-child { border-bottom:none; }
+        .ac-item:hover { background:rgba(57,73,171,0.08); }
+        .ac-p { font-size:13px; font-weight:600; color:var(--text); display:block; }
+        .ac-s { font-size:11px; color:var(--text-muted); display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+
+        /* Time picker */
+        .time-picker-wrap { margin-bottom:13px; }
+        .time-row-display {
+            display:flex; align-items:center; gap:9px; padding:10px 12px;
+            background: var(--glass-card);
+            border: 1px solid var(--border);
+            border-radius:10px; cursor:pointer; transition:border-color 0.2s;
+        }
+        .time-row-display:hover,.time-row-display.active { border-color:var(--accent); }
+        .t-clock { color:var(--text-muted); font-size:15px; }
+        .t-val { font-size:14px; font-weight:600; color:var(--text); flex:1; }
+        .t-chip { padding:3px 10px; border-radius:20px; font-size:11px; font-weight:700; }
+        .t-chip.normal { background:rgba(46,125,50,0.15); color:#2e7d32; }
+        .t-chip.rush   { background:rgba(230,81,0,0.15);  color:#e65100; }
+        .t-chip.night  { background:rgba(198,40,40,0.15); color:#c62828; }
+        .t-chip.safe   { background:rgba(21,101,192,0.15);color:#1565c0; }
+        .hgrid-wrap {
+            display:none; margin-top:5px;
+            background: var(--glass);
+            backdrop-filter: var(--blur);
+            border: 1px solid var(--border);
+            border-radius:12px; padding:11px;
+        }
+        .hgrid-wrap.open { display:block; }
+        .hgrid { display:grid; grid-template-columns:repeat(6,1fr); gap:4px; }
+        .hcell { text-align:center; padding:6px 2px; border-radius:7px; font-size:11px; font-weight:500; cursor:pointer; color:var(--text-sec); border:1px solid transparent; transition:all 0.12s; }
+        .hcell:hover { background:rgba(57,73,171,0.1); border-color:var(--accent); color:var(--accent); }
+        .hcell.sel { background:var(--accent); color:white; border-color:var(--accent); }
+        .hcell.night-h { background:rgba(18,10,40,0.6); color:#b39ddb; }
+        [data-theme="dark"] .hcell.night-h { background:rgba(10,5,25,0.8); }
+        .hcell.rush-h { background:rgba(230,81,0,0.12); color:#e65100; }
+        .hcell.safe-h { background:rgba(21,101,192,0.12); color:#1565c0; }
+        .hcell.sel.night-h,.hcell.sel.rush-h,.hcell.sel.safe-h { background:var(--accent); color:white; }
+        .hlegend { display:flex; gap:10px; margin-top:9px; padding-top:9px; border-top:1px solid var(--divider); }
+        .hlegend span { font-size:10px; color:var(--text-muted); display:flex; align-items:center; gap:3px; }
+        .ldot { width:8px; height:8px; border-radius:2px; }
+        .t-warn { display:none; margin-top:7px; border-left:3px solid #FF9800; padding:7px 10px; border-radius:8px; font-size:11px; line-height:1.5; background:rgba(255,152,0,0.1); color:#e65100; }
+        .t-warn.visible { display:block; }
+
+        /* Buttons */
+        .btn { width:100%; padding:10px 15px; border:none; border-radius:10px; font-size:13px; font-weight:600; cursor:pointer; transition:transform 0.15s,box-shadow 0.15s,opacity 0.15s; margin-bottom:7px; letter-spacing:0.2px; }
+        .btn:last-child { margin-bottom:0; }
+        .btn:hover:not(:disabled) { transform:translateY(-1px); }
+        .btn:disabled { opacity:0.5; cursor:not-allowed; }
+        .btn-primary { background:linear-gradient(135deg,var(--accent),var(--accent2)); color:white; box-shadow:0 4px 14px rgba(57,73,171,0.3); }
+        .btn-primary:hover:not(:disabled) { box-shadow:0 6px 20px rgba(57,73,171,0.45); }
+        .btn-green  { background:linear-gradient(135deg,#43a047,#2e7d32); color:white; box-shadow:0 4px 14px rgba(67,160,71,0.25); }
+        .btn-ghost  { background:var(--glass-dark); backdrop-filter:var(--blur); border:1px solid var(--border); color:var(--text-sec); }
+        .btn-ghost:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+        .btn-orange { background:linear-gradient(135deg,#fb8c00,#e65100); color:white; }
+        .btn-blue   { background:linear-gradient(135deg,#1e88e5,#1565c0); color:white; }
+        .divider { border:none; border-top:1px solid var(--divider); margin:12px 0; }
+
+        /* ── Weather timeline ── */
+        .weather-timeline { display:none; margin-bottom:12px; }
+        .weather-timeline.visible { display:block; }
+        .wt-title { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.6px; margin-bottom:8px; }
+        .wt-row { display:flex; gap:0; overflow-x:auto; padding-bottom:4px; }
+        .wt-row::-webkit-scrollbar { height:3px; } .wt-row::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+        .wt-point { flex:0 0 auto; width:58px; text-align:center; position:relative; }
+        .wt-point:not(:last-child)::after { content:''; position:absolute; top:18px; left:50%; width:100%; height:2px; background:var(--divider); }
+        .wt-icon { font-size:20px; margin-bottom:2px; }
+        .wt-label { font-size:10px; color:var(--text-muted); line-height:1.3; }
+        .wt-temp  { font-size:11px; font-weight:600; color:var(--text); }
+        .wt-change-badge { display:none; background:rgba(230,81,0,0.1); border:1px solid rgba(230,81,0,0.3); border-radius:8px; padding:5px 9px; font-size:11px; color:#e65100; margin-top:7px; }
+        .wt-change-badge.visible { display:block; }
+        .w-alert-bar { display:none; background:rgba(198,40,40,0.1); border-left:3px solid var(--red); padding:6px 10px; border-radius:8px; font-size:11px; color:var(--red); font-weight:600; margin-top:6px; }
+        .w-alert-bar.visible { display:block; }
+
+        /* ── Hist weather badge ── */
+        .hist-weather-badge {
+            display:none; padding:9px 12px; border-radius:10px; margin-bottom:10px;
+            font-size:12px; line-height:1.6;
+        }
+        .hist-weather-badge.visible { display:block; }
+        .hist-weather-badge.VeryHigh { background:rgba(198,40,40,0.1); border-left:3px solid var(--red); color:var(--red); }
+        .hist-weather-badge.High     { background:rgba(230,81,0,0.1); border-left:3px solid #e65100; color:#e65100; }
+        .hist-weather-badge.Moderate { background:rgba(255,152,0,0.1); border-left:3px solid #FF9800; color:#e65100; }
+
+        /* ── Route cards ── */
+        .routes-section { display:none; }
+        .routes-section.visible { display:block; }
+        .routes-heading { font-size:11px; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.7px; margin-bottom:9px; }
+        .route-card {
+            border: 1px solid var(--border);
+            background: var(--glass-card);
+            backdrop-filter: var(--blur);
+            border-radius:12px; padding:12px 13px; margin-bottom:8px;
+            cursor:pointer; transition:all 0.2s; position:relative;
+        }
+        .route-card:hover { border-color:var(--accent); box-shadow:0 4px 16px rgba(57,73,171,0.15); transform:translateY(-1px); }
+        .route-card.selected { border-color:var(--accent); background:rgba(57,73,171,0.08); }
+        .route-card.safest-card { border-color:#43a047; }
+        .route-card.safest-card.selected { border-color:#43a047; background:rgba(67,160,71,0.08); }
+        .safest-badge { position:absolute; top:-9px; right:10px; background:linear-gradient(135deg,#43a047,#2e7d32); color:white; padding:2px 9px; border-radius:20px; font-size:10px; font-weight:700; }
+        .rc-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+        .rc-label { display:flex; align-items:center; gap:7px; }
+        .color-dot { width:10px; height:10px; border-radius:3px; flex-shrink:0; }
+        .route-name { font-size:13px; font-weight:700; color:var(--text); }
+        .risk-pill { padding:3px 9px; border-radius:6px; font-size:11px; font-weight:700; }
+        .risk-pill.Low      { background:rgba(46,125,50,0.15); color:#2e7d32; }
+        .risk-pill.Moderate { background:rgba(230,81,0,0.15); color:#e65100; }
+        .risk-pill.High     { background:rgba(191,54,12,0.15); color:#bf360c; }
+        .risk-pill.VeryHigh { background:rgba(198,40,40,0.15); color:var(--red); }
+        .rc-meta { display:flex; gap:12px; font-size:11px; color:var(--text-muted); margin-bottom:6px; }
+        .bar-track { background:var(--divider); border-radius:4px; height:4px; overflow:hidden; }
+        .bar-fill { height:100%; border-radius:4px; transition:width 0.8s ease; }
+        .bar-fill.Low      { background:linear-gradient(90deg,#43a047,#66bb6a); }
+        .bar-fill.Moderate { background:linear-gradient(90deg,#fb8c00,#ffa726); }
+        .bar-fill.High     { background:linear-gradient(90deg,#e65100,#ff7043); }
+        .bar-fill.VeryHigh { background:linear-gradient(90deg,var(--red),#ef5350); }
+        .rc-bottom { display:flex; justify-content:space-between; align-items:center; margin-top:6px; }
+        .risk-pct { font-size:13px; font-weight:700; color:var(--text); }
+        .sel-btn { padding:4px 12px; border:none; border-radius:6px; font-size:11px; font-weight:600; cursor:pointer; background:var(--accent); color:white; }
+        .sel-btn:hover { opacity:0.85; }
+        .route-card.selected .sel-btn,.route-card.safest-card.selected .sel-btn { background:#43a047; }
+        .sel-detail { display:none; margin-top:9px; padding:9px 11px; background:rgba(57,73,171,0.06); border-radius:9px; font-size:12px; color:var(--text-sec); line-height:1.7; border-left:3px solid var(--accent); }
+        .sel-detail.visible { display:block; }
+
+        /* ── NEW: Safer Route Banner ── */
+        .safer-banner {
+            display:none; padding:11px 13px; border-radius:12px; margin-bottom:10px;
+            background:rgba(67,160,71,0.1);
+            border:1px solid rgba(67,160,71,0.4);
+            backdrop-filter: var(--blur);
+        }
+        .safer-banner.visible { display:block; }
+        .safer-banner-title { font-size:13px; font-weight:700; color:#2e7d32; margin-bottom:4px; }
+        .safer-banner-body  { font-size:12px; color:var(--text-sec); line-height:1.6; }
+        .safer-switch-btn {
+            margin-top:8px; padding:6px 14px; background:#43a047; color:white;
+            border:none; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer;
+            transition:opacity 0.2s;
+        }
+        .safer-switch-btn:hover { opacity:0.85; }
+
+        /* ── NEW: Speed Zone Warning ── */
+        .speed-warning {
+            display:none; padding:9px 12px; border-radius:10px; margin-top:8px;
+            background:rgba(230,81,0,0.08); border-left:3px solid #fb8c00;
+            font-size:11px; color:#e65100; line-height:1.6;
+        }
+        .speed-warning.visible { display:block; }
+
+        /* ── NEW: Fatigue Warning ── */
+        .fatigue-warning {
+            display:none; padding:10px 13px; border-radius:12px; margin-bottom:10px;
+            background:rgba(94,53,177,0.1); border:1px solid rgba(94,53,177,0.3);
+        }
+        .fatigue-warning.visible { display:block; }
+        .fatigue-title { font-size:13px; font-weight:700; color:var(--accent2); margin-bottom:5px; }
+        .fatigue-body  { font-size:12px; color:var(--text-sec); line-height:1.7; }
+        .fatigue-breaks { display:flex; gap:6px; flex-wrap:wrap; margin-top:6px; }
+        .break-chip { padding:3px 9px; background:rgba(94,53,177,0.12); border-radius:20px; font-size:11px; color:var(--accent2); font-weight:600; }
+
+        /* ── NEW: Night Vision Warning ── */
+        .night-warning {
+            display:none; padding:10px 13px; border-radius:12px; margin-bottom:10px;
+            background:rgba(18,10,40,0.15); border:1px solid rgba(120,100,255,0.3);
+        }
+        [data-theme="dark"] .night-warning { background:rgba(18,10,40,0.5); }
+        .night-warning.visible { display:block; }
+        .night-title { font-size:13px; font-weight:700; color:#7986cb; margin-bottom:5px; }
+        .night-list  { font-size:11px; color:var(--text-sec); line-height:1.8; }
+
+        /* ── Landslide panel ── */
+        .ls-panel { display:none; margin-top:10px; border-radius:12px; overflow:hidden; border:1px solid var(--border); }
+        .ls-panel.visible { display:block; }
+        .ls-header { padding:10px 13px; display:flex; align-items:center; gap:9px; }
+        .ls-header.Low      { background:rgba(46,125,50,0.1); }
+        .ls-header.Moderate { background:rgba(230,81,0,0.1); }
+        .ls-header.High     { background:rgba(191,54,12,0.12); }
+        .ls-header.VeryHigh { background:rgba(198,40,40,0.12); }
+        .ls-icon  { font-size:22px; }
+        .ls-info  { flex:1; }
+        .ls-title { font-size:13px; font-weight:700; color:var(--text); }
+        .ls-sub   { font-size:11px; color:var(--text-sec); margin-top:2px; }
+        .ls-pct   { font-size:16px; font-weight:800; }
+        .ls-pct.Low { color:#2e7d32; } .ls-pct.Moderate { color:#e65100; } .ls-pct.High { color:#bf360c; } .ls-pct.VeryHigh { color:var(--red); }
+        .ls-body  { padding:10px 13px; background:rgba(0,0,0,0.03); border-top:1px solid var(--divider); }
+        .ls-zones { font-size:11px; color:var(--text-sec); line-height:1.7; }
+        .ls-season { font-size:11px; color:var(--accent); font-weight:600; margin-top:5px; }
+        .ls-warn  { margin-top:7px; background:rgba(198,40,40,0.08); border-left:3px solid var(--red); padding:6px 10px; border-radius:6px; font-size:11px; color:var(--red); font-weight:600; }
+
+        /* ── Risk legend ── */
+        .risk-legend {
+            position:fixed; bottom:28px; right:128px;
+            background: var(--glass);
+            backdrop-filter: var(--blur);
+            border: 1px solid var(--border);
+            padding:10px 14px; border-radius:12px; box-shadow:var(--shadow); z-index:998; display:none;
+        }
+        .risk-legend.visible { display:block; }
+        .legend-title { font-size:10px; font-weight:700; color:var(--text-muted); margin-bottom:7px; text-transform:uppercase; letter-spacing:0.5px; }
+        .legend-row { display:flex; align-items:center; gap:7px; margin-bottom:4px; font-size:11px; color:var(--text-sec); }
+        .legend-line { width:20px; height:3px; border-radius:2px; }
+
+        /* ── Util / action rows ── */
+        .util-row { display:flex; gap:7px; margin-bottom:6px; }
+        .util-btn { flex:1; padding:7px 0; background:var(--glass-dark); backdrop-filter:var(--blur); border:1px solid var(--border); border-radius:9px; font-size:12px; font-weight:500; color:var(--text-sec); cursor:pointer; transition:all 0.2s; }
+        .util-btn:hover { border-color:var(--accent); color:var(--accent); }
+        .util-btn.saved-ok { border-color:#43a047; color:#43a047; }
+        .action-row { display:flex; gap:7px; }
+        .action-row .btn { margin-bottom:0; font-size:12px; padding:8px 6px; }
+
+        /* ── Saved panel ── */
+        .saved-panel {
+            position:fixed; top:66px; right:20px;
+            background: var(--glass);
+            backdrop-filter: var(--blur);
+            border: 1px solid var(--border);
+            padding:15px; border-radius:16px; box-shadow:var(--shadow);
+            z-index:999; width:248px; max-height:calc(100vh - 86px); overflow-y:auto;
+            transform:translateX(270px); opacity:0;
+            transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1), opacity 0.25s;
+            pointer-events:none;
+        }
+        .saved-panel.open { transform:translateX(0); opacity:1; pointer-events:all; }
+        .sp-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:11px; }
+        .sp-title { font-size:13px; font-weight:700; color:var(--text); }
+        .sp-actions { display:flex; gap:8px; align-items:center; }
+        .sp-close { background:none; border:none; font-size:17px; color:var(--text-muted); cursor:pointer; }
+        .sp-clear { background:none; border:none; font-size:11px; color:var(--red); cursor:pointer; }
+        .sp-empty { text-align:center; color:var(--text-muted); font-size:12px; padding:18px 0; line-height:1.8; }
+        .sp-item { padding:9px 10px; background:var(--glass-dark); backdrop-filter:var(--blur); border-radius:9px; margin-bottom:7px; cursor:pointer; border:1px solid transparent; transition:all 0.18s; }
+        .sp-item:hover { border-color:var(--accent); }
+        .sp-route { font-size:12px; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-bottom:3px; }
+        .sp-meta  { font-size:10px; color:var(--text-muted); display:flex; justify-content:space-between; align-items:center; }
+        .sp-del   { background:none; border:none; font-size:12px; color:var(--text-muted); cursor:pointer; }
+        .sp-del:hover { color:var(--red); }
+
+        /* ── Toast ── */
+        .toast { position:fixed; bottom:78px; left:50%; transform:translateX(-50%); background:var(--glass); backdrop-filter:var(--blur); border:1px solid var(--border); color:var(--text); padding:9px 18px; border-radius:25px; font-size:12px; font-weight:500; z-index:9999; white-space:nowrap; opacity:0; pointer-events:none; transition:opacity 0.3s; box-shadow:var(--shadow); }
+        .toast.show { opacity:1; }
+
+        /* ── Modal ── */
+        .modal-overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.35); backdrop-filter:blur(4px); z-index:2000; display:flex; align-items:center; justify-content:center; opacity:0; visibility:hidden; transition:all 0.25s; }
+        .modal-overlay.active { opacity:1; visibility:visible; }
+        .modal-box {
+            background: var(--glass);
+            backdrop-filter: var(--blur);
+            -webkit-backdrop-filter: var(--blur);
+            border: 1px solid var(--border);
+            border-radius:18px; padding:24px; width:600px; max-width:95vw; max-height:90vh; overflow-y:auto;
+            box-shadow:0 24px 64px rgba(0,0,0,0.22); transform:scale(0.92); transition:transform 0.25s;
+        }
+        .modal-overlay.active .modal-box { transform:scale(1); }
+        .modal-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:5px; }
+        .modal-title  { font-size:16px; font-weight:800; color:var(--text); }
+        .modal-close  { background:var(--glass-dark); backdrop-filter:var(--blur); border:1px solid var(--border); width:28px; height:28px; border-radius:8px; font-size:16px; cursor:pointer; color:var(--text-sec); display:flex; align-items:center; justify-content:center; }
+        .modal-close:hover { background:rgba(57,73,171,0.1); }
+        .chart-sub { font-size:11px; color:var(--text-muted); margin-bottom:16px; }
+        .chart-wrap { position:relative; height:230px; margin-bottom:16px; }
+        .chart-insights { display:grid; grid-template-columns:1fr 1fr 1fr; gap:9px; margin-bottom:14px; }
+        .ins-card { background:var(--glass-dark); backdrop-filter:var(--blur); border-radius:10px; padding:11px; text-align:center; border:1px solid var(--border); }
+        .ins-val { font-size:19px; font-weight:800; margin-bottom:3px; }
+        .ins-label { font-size:10px; color:var(--text-muted); font-weight:500; }
+        .ins-card.safest .ins-val { color:#43a047; } .ins-card.riskiest .ins-val { color:var(--red); } .ins-card.current .ins-val { color:var(--accent); }
+        .best-bar { background:rgba(67,160,71,0.1); border-left:3px solid #43a047; padding:9px 13px; border-radius:8px; font-size:12px; color:#2e7d32; font-weight:500; }
+
+        /* ── Search ── */
+        .search-bar {
+            position:fixed; top:76px; left:50%; transform:translateX(-50%);
+            background: var(--glass);
+            backdrop-filter: var(--blur);
+            border: 1px solid var(--border);
+            border-radius:12px; box-shadow:var(--shadow);
+            display:flex; align-items:center; padding:4px; z-index:998; width:370px; max-width:90%;
+        }
+        .search-input { flex:1; border:none; outline:none; padding:8px 12px; font-size:14px; background:transparent; color:var(--text); }
+        .search-input::placeholder { color:var(--text-muted); }
+        .search-submit { background:var(--accent); border:none; padding:7px 13px; border-radius:9px; cursor:pointer; display:flex; align-items:center; }
+        .search-submit svg { width:15px; height:15px; fill:white; }
+        .sug-dd {
+            position:fixed; top:120px; left:50%; transform:translateX(-50%);
+            background: var(--glass);
+            backdrop-filter: var(--blur);
+            border: 1px solid var(--border);
+            border-radius:13px; box-shadow:var(--shadow);
+            z-index:997; width:370px; max-width:90%; max-height:240px; overflow-y:auto; display:none;
+        }
+        .sug-item { padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--divider); transition:background 0.15s; }
+        .sug-item:hover { background:rgba(57,73,171,0.07); }
+        .sug-item:last-child { border-bottom:none; }
+        .sug-p { font-weight:600; color:var(--text); display:block; font-size:13px; }
+        .sug-s { font-size:11px; color:var(--text-muted); display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+        /* ── Bottom buttons ── */
+        .heatmap-btn {
+            position:fixed; bottom:22px; right:18px;
+            background:linear-gradient(135deg,#ef5350,var(--red));
+            color:white; padding:10px 17px; border-radius:12px;
+            font-size:12px; font-weight:600; text-decoration:none;
+            box-shadow:0 4px 14px rgba(198,40,40,0.35); transition:transform 0.2s; z-index:998;
+        }
+        .heatmap-btn:hover { transform:translateY(-2px); }
+        .plan-btn {
+            position:fixed; bottom:22px; left:50%; transform:translateX(-50%);
+            background:linear-gradient(135deg,var(--accent),var(--accent2));
+            color:white; border:none; padding:11px 26px; border-radius:12px;
+            font-size:13px; font-weight:600; cursor:pointer;
+            box-shadow:0 4px 14px rgba(57,73,171,0.35); z-index:999;
+        }
+
+        @keyframes spin { to { transform:rotate(360deg); } }
+        .spinner { display:inline-block; width:13px; height:13px; border:2px solid rgba(255,255,255,0.3); border-top-color:white; border-radius:50%; animation:spin 0.7s linear infinite; vertical-align:middle; margin-right:5px; }
+
+        /* Pulse animation for black spot markers */
+        @keyframes pulse-ring { 0%{transform:scale(0.8);opacity:0.8} 100%{transform:scale(2.4);opacity:0} }
+
+        .control-panel::-webkit-scrollbar { width:3px; }
+        .control-panel::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+
+        /* ── NDMA Alert Badge ── */
+        .ndma-count { background:#c62828; color:white; border-radius:10px; padding:1px 6px; font-size:10px; font-weight:700; animation: pulse-badge 2s infinite; }
+        @keyframes pulse-badge { 0%,100%{opacity:1} 50%{opacity:0.6} }
+
+        /* ── NDMA Alerts Panel ── */
+        .ndma-panel {
+            position:fixed; top:66px; left:50%; transform:translateX(-50%) translateY(-20px);
+            background: var(--glass); backdrop-filter: var(--blur); -webkit-backdrop-filter: var(--blur);
+            border: 1px solid var(--border); border-radius:16px; box-shadow: var(--shadow);
+            z-index:1001; width:560px; max-width:95vw;
+            opacity:0; visibility:hidden; transition:all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+        }
+        .ndma-panel.open { opacity:1; visibility:visible; transform:translateX(-50%) translateY(0); }
+        .ndma-panel-header {
+            display:flex; align-items:center; gap:10px; padding:14px 18px;
+            border-bottom:1px solid var(--divider);
+        }
+        .ndma-panel-title { font-size:14px; font-weight:700; color:var(--text); flex:1; }
+        .ndma-source { font-size:10px; color:var(--text-muted); }
+        .ndma-close { background:none; border:none; font-size:18px; color:var(--text-muted); cursor:pointer; }
+        .ndma-alerts-list { padding:10px 14px; max-height:320px; overflow-y:auto; }
+        .ndma-alert-item {
+            display:flex; gap:12px; padding:10px 12px; border-radius:10px;
+            margin-bottom:8px; border:1px solid var(--border);
+            background: var(--glass-dark); backdrop-filter: var(--blur);
+            transition: border-color 0.2s;
+        }
+        .ndma-alert-item:hover { border-color: var(--accent); }
+        .ndma-alert-icon { font-size:22px; flex-shrink:0; margin-top:2px; }
+        .ndma-alert-body { flex:1; }
+        .ndma-alert-title { font-size:13px; font-weight:700; color:var(--text); margin-bottom:3px; }
+        .ndma-alert-desc  { font-size:11px; color:var(--text-sec); line-height:1.5; margin-bottom:5px; }
+        .ndma-alert-meta  { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+        .ndma-sev-pill { padding:2px 8px; border-radius:20px; font-size:10px; font-weight:700; }
+        .ndma-sev-pill.Extreme  { background:rgba(198,40,40,0.15); color:#c62828; }
+        .ndma-sev-pill.High     { background:rgba(230,81,0,0.15);  color:#e65100; }
+        .ndma-sev-pill.Moderate { background:rgba(255,152,0,0.15); color:#e65100; }
+        .ndma-sev-pill.Low      { background:rgba(46,125,50,0.15); color:#2e7d32; }
+        .ndma-state-tag { font-size:10px; color:var(--text-muted); }
+        .ndma-link { font-size:10px; color:var(--accent); text-decoration:none; margin-left:auto; }
+        .ndma-link:hover { text-decoration:underline; }
+        .ndma-empty { text-align:center; color:var(--text-muted); font-size:13px; padding:20px 0; }
+        .ndma-footer { padding:8px 18px; border-top:1px solid var(--divider); font-size:10px; color:var(--text-muted); display:flex; justify-content:space-between; }
+
+        /* NDMA alert strip in control panel */
+        .ndma-strip { display:none; margin-bottom:10px; }
+        .ndma-strip.visible { display:block; }
+        .ndma-strip-title { font-size:11px; font-weight:700; color:#c62828; text-transform:uppercase; letter-spacing:0.6px; margin-bottom:7px; display:flex; align-items:center; gap:6px; }
+        .ndma-strip-dot { width:7px; height:7px; background:#c62828; border-radius:50%; animation:pulse-badge 1.5s infinite; }
+        .ndma-strip-item { display:flex; align-items:flex-start; gap:8px; padding:8px 10px; border-radius:9px; margin-bottom:6px; border-left:3px solid; background:var(--glass-dark); font-size:11px; color:var(--text-sec); line-height:1.5; cursor:pointer; }
+        .ndma-strip-item:hover { background:rgba(198,40,40,0.06); }
+
+        @media(max-width:768px){.ndma-panel{width:95vw;}}
+
+        @media (max-width:768px) {
+            .control-panel { width:280px; left:10px; }
+            .search-bar,.sug-dd { width:300px; }
+            .saved-panel { width:240px; }
+            .chart-insights { grid-template-columns:1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar">
+    <div class="logo"><span class="logo-dot"></span>Crash<span style="color:var(--accent)">Alert</span></div>
+    <div class="navbar-spacer"></div>
+    <button class="nav-btn" id="savedBtn"><svg viewBox="0 0 24 24"><path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z"/></svg>Trips<span class="saved-count" id="savedCount">0</span></button>
+    <button class="nav-btn" id="ndmaBtn" title="NDMA Live Alerts" style="display:none;">
+        <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+        Alerts <span class="ndma-count" id="ndmaCount">0</span>
+    </button>
+    <button class="nav-btn" id="darkToggle"><svg viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg><span id="darkLabel">Dark</span></button>
+</nav>
+
+<!-- Search -->
+<div class="search-bar">
+    <input type="text" class="search-input" id="searchInput" placeholder="Search location">
+    <button class="search-submit" id="searchBtn"><svg viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg></button>
+</div>
+<div class="sug-dd" id="searchSugDD"></div>
+
+<div id="map"></div>
+<div class="map-attr">© OpenStreetMap</div>
+
+<!-- Risk legend -->
+<div class="risk-legend" id="riskLegend">
+    <div class="legend-title">Segment Risk</div>
+    <div class="legend-row"><div class="legend-line" style="background:#43a047"></div>Low</div>
+    <div class="legend-row"><div class="legend-line" style="background:#ffa726"></div>Moderate</div>
+    <div class="legend-row"><div class="legend-line" style="background:#fb8c00"></div>High</div>
+    <div class="legend-row"><div class="legend-line" style="background:#ef5350"></div>Very High</div>
+    <div class="legend-row"><div class="legend-line" style="background:repeating-linear-gradient(90deg,#7b1fa2 0,#7b1fa2 4px,transparent 4px,transparent 8px)"></div>Landslide</div>
+    <div class="legend-row"><div class="legend-line" style="background:repeating-linear-gradient(90deg,#e65100 0,#e65100 4px,transparent 4px,transparent 8px)"></div>Speed Zone</div>
+</div>
+
+<button class="plan-btn" id="navToggleBtn">Plan Journey</button>
+
+<!-- Saved panel -->
+<div class="saved-panel" id="savedPanel">
+    <div class="sp-header"><span class="sp-title">Saved Trips</span><div class="sp-actions"><button class="sp-clear" id="clearSavedBtn">Clear all</button><button class="sp-close" id="closeSavedBtn">×</button></div></div>
+    <div id="savedList"></div>
+</div>
+
+<!-- NDMA Alerts Panel -->
+<div class="ndma-panel" id="ndmaPanel">
+    <div class="ndma-panel-header">
+        <span style="font-size:20px;">🚨</span>
+        <div>
+            <div class="ndma-panel-title">NDMA Live Disaster Alerts</div>
+            <div class="ndma-source" id="ndmaSource">Powered by SACHET — National Disaster Alert Portal</div>
+        </div>
+        <button class="ndma-close" id="closeNdmaPanel">×</button>
+    </div>
+    <div class="ndma-alerts-list" id="ndmaAlertsList">
+        <div class="ndma-empty">Loading alerts...</div>
+    </div>
+    <div class="ndma-footer">
+        <span id="ndmaLastUpdate">—</span>
+        <a href="https://sachet.ndma.gov.in" target="_blank" style="color:var(--accent);font-size:10px;">View all on SACHET →</a>
+    </div>
+</div>
+
+<!-- Control Panel -->
+<div class="control-panel" id="controlPanel">
+    <div class="panel-title">Journey Planner</div>
+
+    <div class="field-group">
+        <label class="field-label">Source</label>
+        <input type="text" class="field-input" id="routeSource" placeholder="e.g. Delhi" autocomplete="off">
+        <div class="ac-dd" id="srcAC"></div>
+    </div>
+    <div class="field-group">
+        <label class="field-label">Destination</label>
+        <input type="text" class="field-input" id="routeDestination" placeholder="e.g. Kasol, HP" autocomplete="off">
+        <div class="ac-dd" id="dstAC"></div>
+    </div>
+
+    <div class="time-picker-wrap">
+        <label class="field-label">Departure Time</label>
+        <div class="time-row-display" id="timeRow">
+            <span class="t-clock">◷</span>
+            <span class="t-val" id="tVal">09:00</span>
+            <span class="t-chip normal" id="tChip">Normal</span>
+        </div>
+        <div class="hgrid-wrap" id="hgWrap">
+            <div class="hgrid" id="hgInner"></div>
+            <div class="hlegend"><span><span class="ldot" style="background:rgba(18,10,40,0.6)"></span>Night</span><span><span class="ldot" style="background:rgba(230,81,0,0.2);border:1px solid #e65100"></span>Rush</span><span><span class="ldot" style="background:rgba(21,101,192,0.15);border:1px solid #1565c0"></span>Safest</span></div>
+        </div>
+        <div class="t-warn" id="tWarn"></div>
+    </div>
+
+    <button class="btn btn-green"   id="useLocBtn">Use My Current Location</button>
+    <button class="btn btn-primary" id="analyseBtn">Analyse All Routes</button>
+    <button class="btn btn-ghost"   id="clearBtn">Clear</button>
+    <hr class="divider">
+
+    <!-- NEW: Night warning (shown before analysis if night hour) -->
+    <div class="night-warning" id="nightWarnPre">
+        <div class="night-title">🌙 Night Driving Advisory</div>
+        <div class="night-list" id="nightWarnPreList"></div>
+    </div>
+
+    <!-- NEW: Fatigue warning -->
+    <div class="fatigue-warning" id="fatigueWarn">
+        <div class="fatigue-title">😴 Driver Fatigue Risk</div>
+        <div class="fatigue-body" id="fatigueBody"></div>
+        <div class="fatigue-breaks" id="fatigueBreaks"></div>
+    </div>
+
+    <!-- Weather timeline -->
+    <div class="weather-timeline" id="weatherTimeline">
+        <div class="wt-title">Weather Along Route</div>
+        <div class="wt-row" id="wtRow"></div>
+        <div class="wt-change-badge" id="wtChangeBadge"></div>
+        <div class="w-alert-bar" id="wAlertBar"></div>
+    </div>
+
+    <!-- Historical weather -->
+    <div class="hist-weather-badge" id="histWeatherBadge"></div>
+
+    <!-- NDMA Alert Strip -->
+    <div class="ndma-strip" id="ndmaStrip">
+        <div class="ndma-strip-title"><span class="ndma-strip-dot"></span>NDMA Active Alerts on Your Route</div>
+        <div id="ndmaStripItems"></div>
+    </div>
+
+    <!-- NEW: Safer route banner -->
+    <div class="safer-banner" id="saferBanner">
+        <div class="safer-banner-title">✅ Safer Alternative Available</div>
+        <div class="safer-banner-body" id="saferBannerBody"></div>
+        <button class="safer-switch-btn" id="saferSwitchBtn">Switch to Safer Route</button>
+    </div>
+
+    <!-- Routes -->
+    <div class="routes-section" id="routesSection">
+        <div class="routes-heading" id="routesHeading">Available Routes</div>
+        <div id="routeCards"></div>
+        <div class="sel-detail" id="selDetail"></div>
+
+        <!-- Speed zone warning -->
+        <div class="speed-warning" id="speedWarning"></div>
+
+        <!-- Landslide panel -->
+        <div class="ls-panel" id="lsPanel">
+            <div class="ls-header" id="lsHeader">
+                <div class="ls-icon">⛰️</div>
+                <div class="ls-info"><div class="ls-title" id="lsTitle">Terrain Risk</div><div class="ls-sub" id="lsSub">—</div></div>
+                <div class="ls-pct" id="lsPct">—</div>
+            </div>
+            <div class="ls-body">
+                <div class="ls-zones" id="lsZones"></div>
+                <div class="ls-season" id="lsSeason"></div>
+                <div class="ls-warn" id="lsWarn" style="display:none;"></div>
+            </div>
+        </div>
+
+        <div class="util-row" id="utilRow" style="display:none;">
+            <button class="util-btn" id="saveTripBtn">Save Trip</button>
+            <button class="util-btn" id="shareBtn">Share Route</button>
+        </div>
+        <div class="action-row" id="actionRow" style="display:none;">
+            <button class="btn btn-orange" id="chartBtn">24hr Risk Chart</button>
+            <button class="btn btn-blue"   id="pdfBtn">Download Report</button>
+        </div>
+    </div>
+</div>
+
+<a href="/heatmap" class="heatmap-btn">Accident Heatmap</a>
+<div class="toast" id="toast"></div>
+
+<!-- Chart Modal -->
+<div class="modal-overlay" id="chartModal">
+    <div class="modal-box">
+        <div class="modal-header"><div class="modal-title">24-Hour Risk Forecast</div><button class="modal-close" id="closeChart">×</button></div>
+        <div class="chart-sub" id="chartSub"></div>
+        <div class="chart-wrap"><canvas id="riskChart"></canvas></div>
+        <div class="chart-insights">
+            <div class="ins-card safest"><div class="ins-val" id="safestH">—</div><div class="ins-label">Safest Hour</div></div>
+            <div class="ins-card riskiest"><div class="ins-val" id="riskiestH">—</div><div class="ins-label">Riskiest Hour</div></div>
+            <div class="ins-card current"><div class="ins-val" id="curHR">—</div><div class="ins-label">Your Departure</div></div>
+        </div>
+        <div class="best-bar">Best time to travel: <strong id="bestTime">—</strong></div>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+// ── Globals ────────────────────────────────────────────────────────────────
+let map, tileLayer, userLocation=null, isDark=false, selHour=9;
+let segLayers=[], mkrLayers=[], lsLayers=[], speedLayers=[], bsMarkers=[];
+let allRoutes=[], selRouteId=-1;
+let lastWeather=null, lastAnalysis=null, chartInst=null;
+let srcT, dstT, searchT, curSugs=[];
+let saferSuggestion=null;
+
+const TL='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TD='https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
+
+const ADVICE={
+    Low:'This route appears safe. Maintain attentiveness and observe all traffic regulations.',
+    Moderate:'Moderate risk. Stay alert at intersections and maintain safe following distance.',
+    High:'High risk route. Reduce speed and exercise extra caution throughout the journey.',
+    'Very High':'Very high risk. Consider the safer alternative route if available.'
+};
+
+function rCol(p){return p<25?'#43a047':p<50?'#ffa726':p<70?'#fb8c00':'#ef5350';}
+function lsCol(p){return `rgba(123,31,162,${0.4+p/200})`;}
+function spCol(p){return `rgba(230,81,0,${0.4+p/200})`;}
+function tMult(h){if(h>=22||h<2)return 1.5;if((h>=7&&h<9)||(h>=17&&h<19))return 1.2;if(h>=14&&h<16)return 0.9;return 1.0;}
+
+// ── Dark mode ──────────────────────────────────────────────────────────────
+function toggleDark(){
+    isDark=!isDark;
+    document.documentElement.setAttribute('data-theme',isDark?'dark':'light');
+    document.getElementById('darkLabel').textContent=isDark?'Light':'Dark';
+    localStorage.setItem('ca_dark',isDark?'1':'0');
+    if(map&&tileLayer){map.removeLayer(tileLayer);tileLayer=L.tileLayer(isDark?TD:TL,{attribution:''}).addTo(map);}
+}
+document.getElementById('darkToggle').addEventListener('click',toggleDark);
+
+// ── Map ────────────────────────────────────────────────────────────────────
+function initMap(c,z){
+    map=L.map('map',{attributionControl:false}).setView(c,z);
+    tileLayer=L.tileLayer(isDark?TD:TL,{attribution:''}).addTo(map);
+    // Load black spots on map load
+    loadBlackSpots();
+}
+function getUserLoc(){
+    if(navigator.geolocation){navigator.geolocation.getCurrentPosition(
+        p=>{userLocation={lat:p.coords.latitude,lon:p.coords.longitude};initMap([userLocation.lat,userLocation.lon],13);L.marker([userLocation.lat,userLocation.lon]).addTo(map).bindPopup('Your location').openPopup();},
+        ()=>{userLocation={lat:26.9124,lon:75.7873};initMap([26.9124,75.7873],12);},
+        {enableHighAccuracy:true,timeout:10000,maximumAge:0}
+    );}else{userLocation={lat:26.9124,lon:75.7873};initMap([26.9124,75.7873],12);}
+}
+
+// ── NEW: Load black spots as map markers ──────────────────────────────────
+async function loadBlackSpots(){
+    try {
+        const res  = await fetch('/black-spots');
+        const data = await res.json();
+        data.black_spots.forEach(spot => {
+            // Pulsing circle marker
+            const radius = 4 + Math.min(10, spot.accidents / 20);
+            const circle = L.circleMarker([spot.lat, spot.lon], {
+                radius, color:'#ef5350', fillColor:'#ef5350',
+                fillOpacity:0.7, weight:2,
+            }).addTo(map);
+            circle.bindPopup(
+                `<b>⚠️ Accident Black Spot</b><br>
+                 <b>${spot.name}</b><br>
+                 ${spot.accidents} accidents/year<br>
+                 Highway: ${spot.highway}`
+            );
+            bsMarkers.push(circle);
+        });
+    } catch(e){ console.log('Black spots load failed:', e); }
+}
+
+// ── Hour grid ──────────────────────────────────────────────────────────────
+function buildHGrid(){
+    const g=document.getElementById('hgInner'); g.innerHTML='';
+    for(let h=0;h<24;h++){
+        const c=document.createElement('div'); c.className='hcell'; c.textContent=h.toString().padStart(2,'0');
+        if(h>=22||h<2)c.classList.add('night-h');
+        else if((h>=7&&h<9)||(h>=17&&h<19))c.classList.add('rush-h');
+        else if(h>=14&&h<16)c.classList.add('safe-h');
+        if(h===selHour)c.classList.add('sel');
+        c.addEventListener('click',()=>setHour(h)); g.appendChild(c);
+    }
+}
+function setHour(h){
+    selHour=h;
+    document.getElementById('tVal').textContent=`${h.toString().padStart(2,'0')}:00`;
+    buildHGrid(); updateChip();
+    document.getElementById('hgWrap').classList.remove('open');
+    document.getElementById('timeRow').classList.remove('active');
+    // Show night warning pre-analysis
+    showNightWarnPre(h);
+}
+function updateChip(){
+    const h=selHour,chip=document.getElementById('tChip'),warn=document.getElementById('tWarn');
+    warn.style.borderLeftColor='#FF9800'; warn.style.background='rgba(255,152,0,0.1)'; warn.style.color='#e65100';
+    if(h>=22||h<2){chip.className='t-chip night';chip.textContent='Night';warn.className='t-warn visible';warn.textContent='Late night — risk adjusted for reduced visibility.';}
+    else if((h>=7&&h<9)||(h>=17&&h<19)){chip.className='t-chip rush';chip.textContent='Rush Hour';warn.className='t-warn visible';warn.style.borderLeftColor='#FFC107';warn.textContent='Rush hour — risk adjusted for heavy traffic.';}
+    else if(h>=14&&h<16){chip.className='t-chip safe';chip.textContent='Safest';warn.className='t-warn';}
+    else{chip.className='t-chip normal';chip.textContent='Normal';warn.className='t-warn';}
+}
+document.getElementById('timeRow').addEventListener('click',()=>{
+    const g=document.getElementById('hgWrap'),r=document.getElementById('timeRow'),o=g.classList.contains('open');
+    g.classList.toggle('open',!o); r.classList.toggle('active',!o);
+});
+
+// ── NEW: Night warning pre-analysis ───────────────────────────────────────
+function showNightWarnPre(h){
+    const panel=document.getElementById('nightWarnPre');
+    const list =document.getElementById('nightWarnPreList');
+    if(h>=21||h<6){
+        list.innerHTML=[
+            'Use high beam on open highway stretches',
+            'Watch for pedestrians and two-wheelers without reflectors',
+            'Avoid overtaking on curves and bridges',
+            'Check for drowsiness — take breaks if needed',
+        ].map(t=>`• ${t}`).join('<br>');
+        panel.classList.add('visible');
+    } else {
+        panel.classList.remove('visible');
+    }
+}
+
+// ── Autocomplete ───────────────────────────────────────────────────────────
+async function fetchAC(q,id){
+    if(q.length<2){closeAC(id);return;}
+    try{
+        const d=await(await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5&countrycodes=in`)).json();
+        const dd=document.getElementById(id);
+        if(!d.length){closeAC(id);return;}
+        dd.innerHTML=d.map((s,i)=>`<div class="ac-item" data-i="${i}" data-name="${s.display_name}"><span class="ac-p">${s.display_name.split(',')[0]}</span><span class="ac-s">${s.display_name.split(',').slice(1,3).join(',').trim()}</span></div>`).join('');
+        dd.classList.add('open');
+        dd.querySelectorAll('.ac-item').forEach(el=>el.addEventListener('click',()=>{
+            const inp=id==='srcAC'?'routeSource':'routeDestination';
+            document.getElementById(inp).value=el.dataset.name.split(',').slice(0,2).join(',').trim();
+            closeAC(id);
+        }));
+    }catch{closeAC(id);}
+}
+function closeAC(id){document.getElementById(id).classList.remove('open');}
+document.getElementById('routeSource').addEventListener('input',e=>{clearTimeout(srcT);srcT=setTimeout(()=>fetchAC(e.target.value.trim(),'srcAC'),280);});
+document.getElementById('routeDestination').addEventListener('input',e=>{clearTimeout(dstT);dstT=setTimeout(()=>fetchAC(e.target.value.trim(),'dstAC'),280);});
+document.addEventListener('click',e=>{if(!e.target.closest('#routeSource')&&!e.target.closest('#srcAC'))closeAC('srcAC');if(!e.target.closest('#routeDestination')&&!e.target.closest('#dstAC'))closeAC('dstAC');});
+
+// ── Weather timeline ───────────────────────────────────────────────────────
+function renderWeatherTimeline(wpts){
+    if(!wpts||!wpts.length){document.getElementById('weatherTimeline').classList.remove('visible');return;}
+    const avail=wpts.filter(w=>w.available); if(!avail.length){document.getElementById('weatherTimeline').classList.remove('visible');return;}
+    const labels=['Start','25%','Mid','75%','End'];
+    document.getElementById('wtRow').innerHTML=avail.map((w,i)=>`<div class="wt-point"><div class="wt-icon">${w.icon}</div><div class="wt-label">${labels[i]||''}</div><div class="wt-temp">${w.temp!==null?w.temp+'°C':'—'}</div></div>`).join('');
+    const conds=[...new Set(avail.map(w=>w.risk_label))];
+    const badge=document.getElementById('wtChangeBadge');
+    if(conds.length>1){badge.className='wt-change-badge visible';badge.textContent=`Conditions change: ${conds.join(' → ')}`;}
+    else badge.className='wt-change-badge';
+    const alerts=[...new Set(avail.filter(w=>w.alert).map(w=>w.alert))];
+    const alertBar=document.getElementById('wAlertBar');
+    if(alerts.length){alertBar.className='w-alert-bar visible';alertBar.textContent=alerts.join('  |  ');}
+    else alertBar.className='w-alert-bar';
+    document.getElementById('weatherTimeline').classList.add('visible');
+}
+
+// ── NEW: Hist weather badge ────────────────────────────────────────────────
+function renderHistWeather(hw){
+    const badge=document.getElementById('histWeatherBadge');
+    if(!hw||!hw.available){badge.classList.remove('visible');return;}
+    badge.className=`hist-weather-badge visible ${hw.level.replace(' ','')}`;
+    badge.innerHTML=`<strong>Historical Pattern — ${hw.region}</strong><br>${hw.month}: ${hw.hazard} (${hw.level})<br><span style="font-size:11px;opacity:0.85">${hw.note}</span>`;
+}
+
+// ── NEW: Safer route banner ────────────────────────────────────────────────
+function renderSaferBanner(suggestion){
+    const banner=document.getElementById('saferBanner');
+    if(!suggestion){banner.classList.remove('visible');return;}
+    saferSuggestion=suggestion;
+    const timeTxt=suggestion.time_diff_min>0?` (${suggestion.time_diff_min} min longer)`:``;
+    document.getElementById('saferBannerBody').innerHTML=
+        `<strong>${suggestion.alt_label}</strong> is <strong>${suggestion.risk_reduction}%</strong> less risky — ${suggestion.alt_risk_label} risk${timeTxt}.`;
+    banner.classList.add('visible');
+}
+document.getElementById('saferSwitchBtn').addEventListener('click',()=>{
+    if(saferSuggestion){
+        const alt=allRoutes.find(r=>r.label===saferSuggestion.alt_label);
+        if(alt){selRoute(alt.route_id);document.getElementById('saferBanner').classList.remove('visible');}
+    }
+});
+
+// ── NEW: Fatigue warning ───────────────────────────────────────────────────
+function renderFatigueWarning(fw){
+    const panel=document.getElementById('fatigueWarn');
+    if(!fw){panel.classList.remove('visible');return;}
+    document.getElementById('fatigueBody').textContent=fw.message;
+    const breaksEl=document.getElementById('fatigueBreaks');
+    breaksEl.innerHTML=fw.break_at_km.map(km=>`<span class="break-chip">Break at ${km}km</span>`).join('');
+    panel.classList.add('visible');
+}
+
+// ── NEW: Night warning post-analysis ──────────────────────────────────────
+function renderNightWarning(nw){
+    // Already shown pre-analysis; just update tips if available
+    if(!nw||!nw.active)return;
+    const list=document.getElementById('nightWarnPreList');
+    list.innerHTML=nw.tips.map(t=>`• ${t}`).join('<br>');
+    document.getElementById('nightWarnPre').classList.add('visible');
+}
+
+// ── NEW: Speed warning ─────────────────────────────────────────────────────
+function renderSpeedWarning(sz){
+    const el=document.getElementById('speedWarning');
+    if(!sz||!sz.has_danger_zones){el.classList.remove('visible');return;}
+    el.classList.add('visible');
+    el.innerHTML=`⚡ <strong>${sz.zones.length} high-speed risk zone(s)</strong> detected — estimated max speed ${sz.max_speed_est} km/h. Reduce speed in accident-prone stretches.`;
+}
+
+// ── Draw layers ────────────────────────────────────────────────────────────
+function clearLayers(){
+    segLayers.forEach(l=>map.removeLayer(l));mkrLayers.forEach(l=>map.removeLayer(l));
+    lsLayers.forEach(l=>map.removeLayer(l));speedLayers.forEach(l=>map.removeLayer(l));
+    segLayers=[];mkrLayers=[];lsLayers=[];speedLayers=[];
+}
+
+function drawRoute(route, isSelected){
+    const segs=route.segments,MAX=0.5*8000+1.5*5000+3.0*2000+0.0001*8000*2000;
+    for(let i=0;i<segs.length-1;i++){
+        const p=Math.min(100,(segs[i].risk/MAX)*100);
+        const poly=L.polyline([[segs[i].lat,segs[i].lon],[segs[i+1].lat,segs[i+1].lon]],{
+            color:rCol(p),weight:isSelected?6:3,opacity:isSelected?0.95:0.38
+        }).addTo(map);
+        poly.bindPopup(`${route.label} — Risk: ${p.toFixed(0)}%`);
+        segLayers.push(poly);
+    }
+}
+
+function drawLandslideOverlay(route){
+    const ls=route.landslide;
+    if(!ls||!ls.is_hilly||!ls.ls_segments)return;
+    ls.ls_segments.forEach((seg,i)=>{
+        if(i>=ls.ls_segments.length-1||seg.ls_risk<10)return;
+        const next=ls.ls_segments[i+1];
+        const poly=L.polyline([[seg.lat,seg.lon],[next.lat,next.lon]],{
+            color:lsCol(seg.ls_risk),weight:8,opacity:0.65,dashArray:'4,6'
+        }).addTo(map);
+        poly.bindPopup(`⛰️ Landslide Zone — Risk: ${seg.ls_risk.toFixed(0)}%`);
+        lsLayers.push(poly);
+    });
+}
+
+function drawSpeedOverlay(route){
+    const sz=route.speed_zones;
+    if(!sz||!sz.has_danger_zones)return;
+    sz.zones.forEach(zone=>{
+        const circle=L.circleMarker([zone.lat,zone.lon],{
+            radius:10+zone.est_speed/20,
+            color:'#fb8c00',fillColor:'#fb8c00',fillOpacity:0.3,weight:2,dashArray:'4,3'
+        }).addTo(map);
+        circle.bindPopup(`⚡ Speed Risk Zone<br>Est. speed: ${zone.est_speed} km/h<br>Segment risk: ${zone.seg_risk}%${zone.warning?'<br><b>⚠️ High combined risk</b>':''}`);
+        speedLayers.push(circle);
+    });
+}
+
+function drawAll(routes,safestId){
+    clearLayers();
+    routes.forEach(r=>{if(r.route_id!==selRouteId)drawRoute(r,false);});
+    const sel=routes.find(r=>r.route_id===selRouteId);
+    if(sel){drawRoute(sel,true);drawLandslideOverlay(sel);drawSpeedOverlay(sel);}
+    if(routes.length){
+        const coords=routes[0].coordinates;
+        const pin=(c,color,label)=>{const m=L.marker(c,{icon:L.icon({iconUrl:`https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-${color}.png`,shadowUrl:'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',iconSize:[25,41],iconAnchor:[12,41],popupAnchor:[1,-34],shadowSize:[41,41]})}).addTo(map).bindPopup(label);mkrLayers.push(m);};
+        pin(coords[0],'green','Source');
+        pin(coords[coords.length-1],'red','Destination');
+        map.fitBounds(L.latLngBounds(routes.flatMap(r=>r.coordinates)),{padding:[60,60]});
+    }
+    document.getElementById('riskLegend').classList.add('visible');
+}
+
+// ── Route cards ────────────────────────────────────────────────────────────
+function renderCards(routes,safestId,timeLabel,weather){
+    const wNote=weather&&weather.available?`  |  ${weather.icon} ${weather.risk_label}`:'';
+    document.getElementById('routesHeading').textContent=`${routes.length} routes  |  ${timeLabel}${wNote}`;
+    document.getElementById('routeCards').innerHTML=routes.map(r=>{
+        const isSafest=r.route_id===safestId,rc=r.risk_label.replace(' ','');
+        const hillTag=r.landslide&&r.landslide.is_hilly?`<span style="font-size:10px;color:#7b1fa2;font-weight:600;margin-left:4px;">⛰️ Hilly</span>`:'';
+        const bsTag=r.black_spots&&r.black_spots.length?`<span style="font-size:10px;color:#ef5350;font-weight:600;margin-left:4px;">⚠️ ${r.black_spots.length} hotspot${r.black_spots.length>1?'s':''}</span>`:'';
+        return `<div class="route-card ${isSafest?'safest-card':''}" id="card-${r.route_id}" onclick="selRoute(${r.route_id})">
+            ${isSafest?'<div class="safest-badge">Safest</div>':''}
+            <div class="rc-top"><div class="rc-label"><div class="color-dot" style="background:${r.color}"></div><span class="route-name">${r.label}</span>${hillTag}${bsTag}</div><span class="risk-pill ${rc}">${r.risk_label}</span></div>
+            <div class="rc-meta"><span>${r.distance_km} km</span><span>${r.duration_min} min</span></div>
+            <div class="bar-track"><div class="bar-fill ${rc}" style="width:${r.risk_percent}%"></div></div>
+            <div class="rc-bottom"><span class="risk-pct">${r.risk_percent}% risk</span><button class="sel-btn" onclick="event.stopPropagation();selRoute(${r.route_id})">Select</button></div>
+        </div>`;
+    }).join('');
+    document.getElementById('routesSection').classList.add('visible');
+    document.getElementById('actionRow').style.display='flex';
+    document.getElementById('utilRow').style.display='flex';
+    selRoute(safestId);
+}
+
+function selRoute(id){
+    selRouteId=id;
+    const r=allRoutes.find(x=>x.route_id===id); if(!r)return;
+    document.querySelectorAll('.route-card').forEach(c=>c.classList.remove('selected'));
+    const card=document.getElementById(`card-${id}`);
+    if(card){card.classList.add('selected');card.scrollIntoView({behavior:'smooth',block:'nearest'});}
+    const safestId=allRoutes.reduce((s,x)=>x.risk_percent<allRoutes[s].risk_percent?x.route_id:s,0);
+    drawAll(allRoutes,safestId);
+    const det=document.getElementById('selDetail');
+    det.innerHTML=`<strong>${r.label} selected</strong><br>${ADVICE[r.risk_label]}`;
+    det.classList.add('visible');
+    // Render all new features for selected route
+    renderLandslidePanel(r);
+    renderSpeedWarning(r.speed_zones);
+    renderFatigueWarning(r.fatigue_warning);
+    renderNightWarning(r.night_warning);
+    if(r.coordinates.length) map.fitBounds(L.latLngBounds(r.coordinates),{padding:[60,60]});
+    document.getElementById('saveTripBtn').className='util-btn';
+    document.getElementById('saveTripBtn').textContent='Save Trip';
+}
+
+// ── Landslide panel ────────────────────────────────────────────────────────
+function renderLandslidePanel(route){
+    const ls=route.landslide,panel=document.getElementById('lsPanel');
+    if(!ls||!ls.is_hilly){panel.classList.remove('visible');return;}
+    const rc=ls.risk_label.replace(' ','');
+    document.getElementById('lsHeader').className=`ls-header ${rc}`;
+    document.getElementById('lsTitle').textContent=`Terrain Risk — ${ls.region}`;
+    document.getElementById('lsSub').textContent='Landslide & rockfall assessment';
+    document.getElementById('lsPct').className=`ls-pct ${rc}`;
+    document.getElementById('lsPct').textContent=`${ls.avg_risk}%`;
+    const ze=document.getElementById('lsZones');
+    ze.innerHTML=ls.zones_crossed&&ls.zones_crossed.length?`<strong>Hazard zones:</strong><br>${ls.zones_crossed.join(' • ')}`:'No major documented zones detected.';
+    document.getElementById('lsSeason').textContent=`Season: ${ls.season_label}`;
+    const we=document.getElementById('lsWarn');
+    if(ls.warning){we.style.display='block';we.textContent='High risk: Check NDMA advisories before travel.';}
+    else we.style.display='none';
+    panel.classList.add('visible');
+}
+
+// ── Analyse ────────────────────────────────────────────────────────────────
+async function analyseRoutes(){
+    const src=document.getElementById('routeSource').value.trim();
+    const dst=document.getElementById('routeDestination').value.trim();
+    if(!src||!dst){showToast('Enter both source and destination');return;}
+    const btn=document.getElementById('analyseBtn');
+    btn.disabled=true; btn.innerHTML='<span class="spinner"></span>Analysing...';
+    ['routesSection','selDetail','weatherTimeline','riskLegend','saferBanner','fatigueWarn'].forEach(id=>document.getElementById(id).classList.remove('visible'));
+    document.getElementById('lsPanel').classList.remove('visible');
+    document.getElementById('histWeatherBadge').classList.remove('visible');
+    document.getElementById('actionRow').style.display='none';
+    document.getElementById('utilRow').style.display='none';
+    closeAC('srcAC'); closeAC('dstAC');
+    try{
+        const [s,d]=await Promise.all([geocode(src),geocode(dst)]);
+        if(!s||!d){showToast('Could not locate one or both addresses');return;}
+        const res=await fetch(`/route-risk?start=${s.lon},${s.lat}&end=${d.lon},${d.lat}&hour=${selHour}`);
+        const data=await res.json();
+        if(data.error){showToast('Error: '+data.error);return;}
+        allRoutes=data.routes; selRouteId=data.safest_route_id;
+        lastAnalysis={src:s,dst:d,hour:selHour,data};
+        lastWeather=data.weather;
+
+        // Render all features
+        renderWeatherTimeline(data.routes[0].weather_points);
+        renderNdmaStrip(data.ndma_alerts || []);
+        renderHistWeather(data.hist_weather);
+        renderSaferBanner(data.safer_suggestion);
+        drawAll(allRoutes,data.safest_route_id);
+        renderCards(allRoutes,data.safest_route_id,data.time_label,data.weather);
+    }catch(e){console.error(e);showToast('Something went wrong');}
+    finally{btn.disabled=false;btn.innerHTML='Analyse All Routes';}
+}
+
+function clearAll(){
+    ['routeSource','routeDestination'].forEach(id=>document.getElementById(id).value='');
+    ['routesSection','selDetail','weatherTimeline','riskLegend','saferBanner','fatigueWarn','histWeatherBadge'].forEach(id=>document.getElementById(id).classList.remove('visible'));
+    document.getElementById('lsPanel').classList.remove('visible');
+    document.getElementById('speedWarning').classList.remove('visible');
+    document.getElementById('ndmaStrip').classList.remove('visible');
+    document.getElementById('routeCards').innerHTML='';
+    document.getElementById('actionRow').style.display='none';
+    document.getElementById('utilRow').style.display='none';
+    clearLayers(); allRoutes=[]; selRouteId=-1; lastAnalysis=null; lastWeather=null; saferSuggestion=null;
+}
+
+// ── 24hr Chart ─────────────────────────────────────────────────────────────
+function openChart(){
+    if(!lastAnalysis){showToast('Analyse a route first');return;}
+    const route=allRoutes.find(r=>r.route_id===selRouteId)||allRoutes[0];
+    const wm=lastWeather&&lastWeather.available?lastWeather.multiplier:1.0;
+    const base=route.risk_percent/(tMult(lastAnalysis.hour)*wm);
+    const vals=Array.from({length:24},(_,h)=>{const v=base*tMult(h)*wm+Math.sin(h*0.8)*3+Math.cos(h*1.3)*2;return Math.round(Math.min(95,Math.max(3,v))*10)/10;});
+    const fmt=h=>`${h.toString().padStart(2,'0')}:00`;
+    const minV=Math.min(...vals),maxV=Math.max(...vals),minH=vals.indexOf(minV),maxH=vals.indexOf(maxV);
+    document.getElementById('safestH').textContent=fmt(minH);
+    document.getElementById('riskiestH').textContent=fmt(maxH);
+    document.getElementById('curHR').textContent=`${vals[lastAnalysis.hour]}%`;
+    document.getElementById('bestTime').textContent=`${fmt(minH)} to ${fmt((minH+2)%24)}  (${minV}% risk)`;
+    document.getElementById('chartSub').textContent=`${route.label}: ${lastAnalysis.src.name.split(',')[0]} to ${lastAnalysis.dst.name.split(',')[0]}. Weather: ${lastWeather&&lastWeather.available?lastWeather.description:'not available'}.`;
+    const bg=vals.map(v=>v<25?'rgba(67,160,71,0.82)':v<50?'rgba(255,167,38,0.82)':v<70?'rgba(251,140,0,0.82)':'rgba(239,83,80,0.82)');
+    if(chartInst)chartInst.destroy();
+    chartInst=new Chart(document.getElementById('riskChart').getContext('2d'),{
+        type:'bar',
+        data:{labels:Array.from({length:24},(_,i)=>fmt(i)),datasets:[{data:vals,backgroundColor:bg,borderRadius:4,borderColor:Array.from({length:24},(_,i)=>i===lastAnalysis.hour?'rgba(57,73,171,0.9)':'transparent'),borderWidth:Array.from({length:24},(_,i)=>i===lastAnalysis.hour?2:0)}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>` Risk: ${c.raw}%`,afterLabel:c=>` Time factor: ${tMult(c.dataIndex)}x`}}},scales:{y:{beginAtZero:true,max:100,title:{display:true,text:'Risk (%)',font:{size:11}},grid:{color:'rgba(128,128,128,0.07)'}},x:{grid:{display:false},ticks:{maxRotation:45,callback:(v,i)=>i%3===0?fmt(i):''}}}}
+    });
+    document.getElementById('chartModal').classList.add('active');
+}
+document.getElementById('chartBtn').addEventListener('click',openChart);
+document.getElementById('closeChart').addEventListener('click',()=>document.getElementById('chartModal').classList.remove('active'));
+document.getElementById('chartModal').addEventListener('click',e=>{if(e.target===document.getElementById('chartModal'))document.getElementById('chartModal').classList.remove('active');});
+
+// ── PDF ────────────────────────────────────────────────────────────────────
+function downloadPDF(){
+    if(!lastAnalysis){showToast('Analyse a route first');return;}
+    const{jsPDF}=window.jspdf;
+    const doc=new jsPDF({unit:'mm',format:'a4'});
+    const route=allRoutes.find(r=>r.route_id===selRouteId)||allRoutes[0];
+    const w=lastWeather,{src,dst,hour,data}=lastAnalysis;
+    const M=18,PW=210; let y=0;
+    doc.setFillColor(40,50,110); doc.rect(0,0,PW,36,'F');
+    doc.setFillColor(70,35,130); doc.rect(PW*0.6,0,PW*0.4,36,'F');
+    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(20); doc.text('CrashAlert',M,15);
+    doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.text('Route Safety Intelligence Report',M,23); doc.text(`Generated: ${new Date().toLocaleString('en-IN')}`,M,30); y=46;
+    const sh=t=>{doc.setTextColor(25,25,55);doc.setFont('helvetica','bold');doc.setFontSize(12);doc.text(t,M,y);y+=6;doc.setDrawColor(200,200,220);doc.setLineWidth(0.25);doc.line(M,y,PW-M,y);y+=5;};
+    const row=(l,v)=>{doc.setFont('helvetica','bold');doc.setFontSize(9);doc.setTextColor(100,100,130);doc.text(l,M,y);doc.setFont('helvetica','normal');doc.setTextColor(20,20,40);doc.text(String(v),M+42,y);y+=6.5;};
+    sh('Route Summary');
+    row('From:',src.name.split(',').slice(0,2).join(','));row('To:',dst.name.split(',').slice(0,2).join(','));
+    row('Route:',route.label);row('Distance:',`${route.distance_km} km`);row('Duration:',`${route.duration_min} min`);
+    row('Departure:',`${hour.toString().padStart(2,'0')}:00  (${data.time_label})`);y+=3;
+    const rc2={Low:[67,160,71],Moderate:[251,140,0],High:[239,108,0],'Very High':[239,83,80]}[route.risk_label]||[100,100,100];
+    doc.setFillColor(...rc2);doc.roundedRect(M,y,PW-M*2,20,3,3,'F');
+    doc.setTextColor(255,255,255);doc.setFont('helvetica','bold');doc.setFontSize(13);doc.text(`${route.risk_label} Risk  |  ${route.risk_percent}%`,M+6,y+9);
+    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.text(ADVICE[route.risk_label],M+6,y+16);y+=28;
+    sh('Risk Analysis');
+    row('Accident Risk:',`${route.accident_risk||route.risk_percent}%`);
+    row('Time of Day:',`${data.time_multiplier}x  (${data.time_label})`);
+    row('Weather:',w&&w.available?`${w.multiplier}x  (${w.risk_label})`:'Unavailable');
+    if(route.landslide&&route.landslide.is_hilly){row('Terrain Risk:',`${route.landslide.avg_risk}% (${route.landslide.risk_label})`);row('Region:',route.landslide.region);}
+    if(route.speed_zones&&route.speed_zones.has_danger_zones){row('Speed Zones:',`${route.speed_zones.zones.length} high-speed risk zone(s) detected`);}
+    if(route.black_spots&&route.black_spots.length){row('Black Spots:',`${route.black_spots.length} accident hotspot(s) on route`);}
+    row('Combined Score:',`${route.risk_percent}%`);y+=3;
+    if(route.fatigue_warning){sh('Fatigue Advisory');doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(60,30,120);doc.text(route.fatigue_warning.message,M,y);y+=8;row('Break at:',route.fatigue_warning.break_at_km.map(k=>k+'km').join(', '));y+=3;}
+    if(route.night_warning){sh('Night Driving Advisory');doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(30,30,80);route.night_warning.tips.forEach(t=>{doc.text(`• ${t}`,M,y);y+=6;});y+=3;}
+    if(route.black_spots&&route.black_spots.length){sh('Accident Black Spots on Route');route.black_spots.forEach(bs=>{row(`${bs.name}:`,`${bs.accidents} accidents/year  |  ${bs.highway}`);});y+=3;}
+    sh('Safety Recommendations');
+    const tips=['Always wear your seatbelt and ensure all passengers are buckled.','Maintain a safe following distance.','Avoid using mobile devices while driving.','Reduce speed during low-visibility conditions.','Take a short break every two hours.'];
+    doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(40,40,70);
+    tips.forEach(t=>{doc.text(t,M,y);y+=6;});
+    doc.setFillColor(238,238,248);doc.rect(0,277,PW,20,'F');
+    doc.setFont('helvetica','italic');doc.setFontSize(7.5);doc.setTextColor(120,120,160);
+    doc.text('CrashAlert  |  Route-Based Road Accident & Terrain Risk Prediction System  |  3rd Year Engineering Project',M,285);
+    doc.text('This report is for informational purposes only. Always comply with local traffic laws and regulations.',M,291);
+    doc.save(`CrashAlert_${src.name.split(',')[0].replace(/\s+/g,'_')}_to_${dst.name.split(',')[0].replace(/\s+/g,'_')}.pdf`);
+}
+document.getElementById('pdfBtn').addEventListener('click',downloadPDF);
+
+// ── Saved trips ────────────────────────────────────────────────────────────
+const SK='ca_trips';
+const getSaved=()=>{try{return JSON.parse(localStorage.getItem(SK)||'[]');}catch{return[];}};
+const setSaved=t=>localStorage.setItem(SK,JSON.stringify(t));
+function saveTrip(){
+    if(!lastAnalysis){showToast('Analyse a route first');return;}
+    const{src,dst}=lastAnalysis;
+    const trips=getSaved();
+    const e={id:Date.now(),src:src.name.split(',').slice(0,2).join(',').trim(),dst:dst.name.split(',').slice(0,2).join(',').trim(),srcFull:src.name,dstFull:dst.name,at:new Date().toLocaleString('en-IN',{dateStyle:'short',timeStyle:'short'})};
+    if(trips.some(t=>t.src===e.src&&t.dst===e.dst)){showToast('Already saved');return;}
+    trips.unshift(e);if(trips.length>10)trips.pop();
+    setSaved(trips);renderSaved();
+    document.getElementById('saveTripBtn').className='util-btn saved-ok';
+    document.getElementById('saveTripBtn').textContent='Saved';
+    showToast('Trip saved');
+}
+function renderSaved(){
+    const trips=getSaved(),cnt=document.getElementById('savedCount');
+    cnt.textContent=trips.length;cnt.className=`saved-count ${trips.length?'visible':''}`;
+    const list=document.getElementById('savedList');
+    if(!trips.length){list.innerHTML='<div class="sp-empty">No saved trips yet.<br>Analyse a route and click Save Trip.</div>';return;}
+    list.innerHTML=trips.map(t=>`<div class="sp-item" onclick="loadTrip('${encodeURIComponent(t.srcFull)}','${encodeURIComponent(t.dstFull)}')"><button class="sp-del" onclick="event.stopPropagation();delTrip(${t.id})">&#x2715;</button><div class="sp-route">${t.src} to ${t.dst}</div><div class="sp-meta"><span>${t.at}</span></div></div>`).join('');
+}
+function delTrip(id){setSaved(getSaved().filter(t=>t.id!==id));renderSaved();}
+function loadTrip(s,d){document.getElementById('routeSource').value=decodeURIComponent(s).split(',').slice(0,2).join(',');document.getElementById('routeDestination').value=decodeURIComponent(d).split(',').slice(0,2).join(',');document.getElementById('savedPanel').classList.remove('open');analyseRoutes();}
+document.getElementById('savedBtn').addEventListener('click',()=>document.getElementById('savedPanel').classList.toggle('open'));
+document.getElementById('closeSavedBtn').addEventListener('click',()=>document.getElementById('savedPanel').classList.remove('open'));
+document.getElementById('clearSavedBtn').addEventListener('click',()=>{if(confirm('Clear all saved trips?')){setSaved([]);renderSaved();}});
+document.getElementById('saveTripBtn').addEventListener('click',saveTrip);
+
+// ── Share ──────────────────────────────────────────────────────────────────
+function shareRoute(){
+    if(!lastAnalysis){showToast('Analyse a route first');return;}
+    const{src,dst,hour}=lastAnalysis;
+    const url=`${location.origin}${location.pathname}?src=${encodeURIComponent(src.name.split(',')[0])}&dst=${encodeURIComponent(dst.name.split(',')[0])}&hour=${hour}`;
+    navigator.clipboard.writeText(url).then(()=>showToast('Link copied')).catch(()=>prompt('Copy:',url));
+}
+document.getElementById('shareBtn').addEventListener('click',shareRoute);
+function loadFromURL(){
+    const p=new URLSearchParams(location.search);
+    if(p.has('src')&&p.has('dst')){document.getElementById('routeSource').value=p.get('src');document.getElementById('routeDestination').value=p.get('dst');if(p.has('hour'))setHour(parseInt(p.get('hour')));setTimeout(analyseRoutes,1200);}
+}
+
+// ── Geocode ────────────────────────────────────────────────────────────────
+async function geocode(text){const d=await(await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(text)}&limit=1`)).json();return d.length?{lat:parseFloat(d[0].lat),lon:parseFloat(d[0].lon),name:d[0].display_name}:null;}
+
+// ── Global search ──────────────────────────────────────────────────────────
+async function fetchSug(q){if(q.length<2){hideSug();return;}try{curSugs=(await(await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5`)).json())||[];const dd=document.getElementById('searchSugDD');if(!curSugs.length){hideSug();return;}dd.innerHTML=curSugs.map((s,i)=>`<div class="sug-item" data-i="${i}"><span class="sug-p">${s.display_name.split(',')[0]}</span><span class="sug-s">${s.display_name}</span></div>`).join('');dd.style.display='block';dd.querySelectorAll('.sug-item').forEach(el=>el.addEventListener('click',()=>{const s=curSugs[+el.dataset.i];document.getElementById('searchInput').value=s.display_name;hideSug();map.setView([parseFloat(s.lat),parseFloat(s.lon)],14);window.sM?window.sM.setLatLng([parseFloat(s.lat),parseFloat(s.lon)]):(window.sM=L.marker([parseFloat(s.lat),parseFloat(s.lon)]).addTo(map).bindPopup(s.display_name));window.sM.openPopup();}));}catch{hideSug();}}
+function hideSug(){document.getElementById('searchSugDD').style.display='none';}
+async function doSearch(){const v=document.getElementById('searchInput').value.trim();if(!v)return;const d=await(await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(v)}&limit=1`)).json();hideSug();if(d.length){map.setView([parseFloat(d[0].lat),parseFloat(d[0].lon)],14);window.sM?window.sM.setLatLng([parseFloat(d[0].lat),parseFloat(d[0].lon)]):(window.sM=L.marker([parseFloat(d[0].lat),parseFloat(d[0].lon)]).addTo(map).bindPopup(d[0].display_name));window.sM.openPopup();}else showToast('Location not found');}
+document.getElementById('searchBtn').addEventListener('click',doSearch);
+document.getElementById('searchInput').addEventListener('input',e=>{clearTimeout(searchT);if(e.target.value.trim().length>=2)searchT=setTimeout(()=>fetchSug(e.target.value.trim()),300);else hideSug();});
+document.getElementById('searchInput').addEventListener('keypress',e=>{if(e.key==='Enter'){hideSug();doSearch();}});
+document.addEventListener('click',e=>{if(!e.target.closest('.search-bar')&&!e.target.closest('.sug-dd'))hideSug();});
+
+// ── Toast ──────────────────────────────────────────────────────────────────
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);}
+
+// ── Events ─────────────────────────────────────────────────────────────────
+document.getElementById('analyseBtn').addEventListener('click',analyseRoutes);
+document.getElementById('clearBtn').addEventListener('click',clearAll);
+document.getElementById('routeDestination').addEventListener('keypress',e=>{if(e.key==='Enter')analyseRoutes();});
+document.getElementById('useLocBtn').addEventListener('click',()=>{if(userLocation)document.getElementById('routeSource').value=`${userLocation.lat.toFixed(5)}, ${userLocation.lon.toFixed(5)}`;else showToast('Location not available');});
+document.getElementById('navToggleBtn').addEventListener('click',()=>{const p=document.getElementById('controlPanel');p.style.display=p.style.display==='none'?'block':'none';});
+
+
+// ── NDMA Alerts ────────────────────────────────────────────────────────────
+let ndmaAlerts = [];
+
+async function loadNdmaAlerts() {
+    try {
+        const res  = await fetch('/ndma-alerts');
+        const data = await res.json();
+        ndmaAlerts = data.alerts || [];
+        renderNdmaNavBadge(ndmaAlerts.length);
+        renderNdmaPanel(ndmaAlerts);
+        document.getElementById('ndmaLastUpdate').textContent =
+            `Last updated: ${new Date().toLocaleTimeString('en-IN')}`;
+    } catch(e) {
+        console.log('NDMA alerts load failed:', e);
+    }
+}
+
+function renderNdmaNavBadge(count) {
+    const btn   = document.getElementById('ndmaBtn');
+    const badge = document.getElementById('ndmaCount');
+    if (count > 0) {
+        btn.style.display = 'flex';
+        btn.style.borderColor = '#c62828';
+        btn.style.color = '#c62828';
+        badge.textContent = count;
+    }
+}
+
+function renderNdmaPanel(alerts) {
+    const list = document.getElementById('ndmaAlertsList');
+    if (!alerts.length) {
+        list.innerHTML = '<div class="ndma-empty">No active disaster alerts for India right now.</div>';
+        return;
+    }
+    list.innerHTML = alerts.map(a => `
+        <div class="ndma-alert-item">
+            <div class="ndma-alert-icon">${a.icon}</div>
+            <div class="ndma-alert-body">
+                <div class="ndma-alert-title">${a.title}</div>
+                <div class="ndma-alert-desc">${a.desc}</div>
+                <div class="ndma-alert-meta">
+                    <span class="ndma-sev-pill ${a.severity}">${a.severity}</span>
+                    ${a.states && a.states.length ? `<span class="ndma-state-tag">${a.states.join(', ')}</span>` : ''}
+                    <span style="font-size:10px;color:var(--text-muted);margin-left:auto">${a.source}</span>
+                    <a class="ndma-link" href="${a.link}" target="_blank">Details →</a>
+                </div>
+            </div>
+        </div>`).join('');
+}
+
+function renderNdmaStrip(routeAlerts) {
+    const strip = document.getElementById('ndmaStrip');
+    const items = document.getElementById('ndmaStripItems');
+    if (!routeAlerts || !routeAlerts.length) {
+        strip.classList.remove('visible');
+        return;
+    }
+    items.innerHTML = routeAlerts.map(a => `
+        <div class="ndma-strip-item" style="border-left-color:${a.color}"
+             onclick="document.getElementById('ndmaPanel').classList.add('open')">
+            <span style="font-size:16px;flex-shrink:0">${a.icon}</span>
+            <div><strong>${a.title}</strong><br>${a.desc.substring(0,120)}${a.desc.length>120?'…':''}</div>
+        </div>`).join('');
+    strip.classList.add('visible');
+}
+
+// NDMA panel toggle
+document.getElementById('ndmaBtn').addEventListener('click', () => {
+    document.getElementById('ndmaPanel').classList.toggle('open');
+});
+document.getElementById('closeNdmaPanel').addEventListener('click', () => {
+    document.getElementById('ndmaPanel').classList.remove('open');
+});
+// Close on outside click
+document.addEventListener('click', e => {
+    if (!e.target.closest('#ndmaPanel') && !e.target.closest('#ndmaBtn'))
+        document.getElementById('ndmaPanel').classList.remove('open');
+});
+
+// Refresh alerts every 10 minutes
+setInterval(loadNdmaAlerts, 600000);
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded',()=>{
+    if(localStorage.getItem('ca_dark')==='1')toggleDark();
+    buildHGrid(); updateChip();
+    getUserLoc(); renderSaved(); loadFromURL(); loadNdmaAlerts();
+});
+</script>
+</body>
+</html>
